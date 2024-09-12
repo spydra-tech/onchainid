@@ -1,0 +1,191 @@
+use soroban_sdk::{contract, contractimpl, crypto::Crypto, vec, Address, Bytes, BytesN, Env, String, Vec, U256};
+use crate::{erc734::traits::IERC734, erc735::traits::IERC735, structs::{DataKey, Key}};
+
+#[contract]
+pub struct Identity;
+
+#[contractimpl]
+impl IERC734 for Identity {
+    /**
+    * implementation of the addKey function of the ERC-734 standard
+    * Adds a _key to the identity. The _purpose specifies the purpose of key. Initially we propose four purposes:
+    * 1: MANAGEMENT keys, which can manage the identity
+    * 2: ACTION keys, which perform actions in this identities name (signing, logins, transactions, etc.)
+    * 3: CLAIM signer keys, used to sign claims on other identities which need to be revokable.
+    * 4: ENCRYPTION keys, used to encrypt data e.g. hold in claims.
+    * MUST only be done by keys of purpose 1, or the identity itself.
+    * If its the identity itself, the approval process will determine its approval.
+    * @param _key public key
+    * @param _type type of key used, which would be a uint256 for different key types. e.g. 1 = ECDSA, 2 = RSA, etc.
+    * @param _purpose a uint256 specifying the key type, like 1 = MANAGEMENT, 2 = ACTION, 3 = CLAIM, 4 = ENCRYPTION
+    * @return success Returns TRUE if the addition was successful and FALSE if not
+    */
+    fn add_key(e: Env, key: String, purpose: u128, key_type: u128) -> bool {
+        //TODO: Authorization check for only manager
+
+        let map_key = DataKey::Key(key.clone());
+        if let Some(mut retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
+            let retrieved_purposes: Vec<u128> = retrieved_key.purposes.clone();
+
+            for retrieved_purpose in retrieved_purposes {
+                if purpose == retrieved_purpose {
+                    panic!("Conflict: Key already has purpose");
+                }
+            }
+
+            retrieved_key.purposes.push_back(purpose);
+        } else {
+            //let mut new_purposes: Vec<u128> = Vec::new(&e);
+            //new_purposes.push_back(purpose);
+
+            let new_purposes: Vec<u128> = vec![&e, purpose];
+            let new_key: Key = Key {
+                purposes: new_purposes,
+                key_type: key_type,
+                key: key.clone(),
+            };
+            e.storage().persistent().set(&map_key, &new_key);
+
+            //TODO: Set TTL?
+        }
+
+        let purpose_key = DataKey::Purpose(purpose);
+        if let Some(mut retrieved_purpose_keys) = e.storage().persistent().get::<DataKey, Vec<String>>(&purpose_key) {
+            retrieved_purpose_keys.push_back(key);
+            e.storage().persistent().set(&purpose_key, &retrieved_purpose_keys);
+        } else {
+            let retrieved_purpose_keys = vec![&e, key];
+            e.storage().persistent().set(&purpose_key, &retrieved_purpose_keys);
+        }
+  
+        //TODO: Emit Event
+        return true;
+    }
+
+    /**
+    * See {IERC734-removeKey}.
+    * Remove the purpose from a key.
+    */
+    fn remove_key(e: Env, key: String, purpose: u128) -> bool {
+        let map_key = DataKey::Key(key.clone());
+        if let Some(mut retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
+            let mut retrieved_purposes = retrieved_key.purposes;
+            let mut purpose_index = 0;
+            while retrieved_purposes.get_unchecked(purpose_index) != purpose {
+                purpose_index = purpose_index+1;
+                if purpose_index == retrieved_purposes.len() {
+                    panic!("NotFound: Key doesn't have such purpose");
+                }
+            }
+
+            retrieved_purposes.set(purpose_index, retrieved_purposes.get_unchecked(retrieved_purposes.len()-1));
+            retrieved_purposes.pop_back();
+            retrieved_key.purposes = retrieved_purposes;
+
+            if retrieved_key.purposes.len()-1 == 0 {
+                e.storage().persistent().remove(&map_key);
+            } else {
+                e.storage().persistent().set(&map_key, &retrieved_key);
+            }
+
+            let mut key_index = 0;
+            let map_purpose = DataKey::Purpose(purpose);
+            if let Some(mut retrieved_keys) = e.storage().persistent().get::<DataKey, Vec<String>>(&map_purpose) {
+                let array_length = retrieved_keys.len();
+
+                while retrieved_keys.get_unchecked(key_index) != key {
+                    key_index = key_index+1;
+
+                    if key_index >= array_length {
+                        break;
+                    }
+                }
+
+                retrieved_keys.set(key_index, retrieved_keys.get_unchecked(array_length-1));
+                retrieved_keys.pop_back();
+                e.storage().persistent().set(&map_purpose, &retrieved_keys);
+                //TODO: Adjust TTL
+            }
+
+            //TODO: Raise Event
+            return true;
+        } else {
+            panic!("NotFound: Key isn't registered");
+        }
+    }
+
+    /**
+     * See {IERC734-getKey}.
+     * Implementation of the getKey function from the ERC-734 standard
+     * @param _key The public key. 
+     * @return purposes Returns the full key data, if present in the identity.
+     * @return keyType Returns the full key data, if present in the identity.
+     * @return key Returns the full key data, if present in the identity.
+     */
+    fn get_key(e: Env, key: String) -> (Vec<u128>, u128, String){
+        let map_key = DataKey::Key(key.clone());
+        if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
+            (retrieved_key.purposes, retrieved_key.key_type, retrieved_key.key)
+        } else {
+            panic!("NotFound: Key isn't registered");
+        }
+    }
+
+    /**
+    * See {IERC734-getKeyPurposes}.
+    * gets the purposes of a key
+    * @param _key The public key
+    * @return _purposes Returns the purposes of the specified key
+    */
+    fn get_key_purposes(e: Env, key: String) -> Vec<u128>{
+        let map_key = DataKey::Key(key.clone());
+        if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
+            retrieved_key.purposes
+        } else {
+            panic!("NotFound: Key isn't registered");
+        }
+    }
+
+    /**
+    * See {IERC734-getKeysByPurpose}.
+    * gets all the keys with a specific purpose from an identity
+    * @param _purpose a uint256[] Array of the key types, like 1 = MANAGEMENT, 2 = ACTION, 3 = CLAIM, 4 = ENCRYPTION
+    * @return keys Returns an array of public key held by this identity and having the specified purpose
+    */
+    fn get_keys_by_purpose(e: Env, purpose: u128) -> Vec<String>{
+        let map_purpose = DataKey::Purpose(purpose);
+        if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Vec<String>>(&map_purpose) {
+            return retrieved_key;
+        } else {
+            return vec![&e];
+        }
+    }
+
+    fn key_has_purpose(e: Env, key: String, purpose: u128) -> bool{
+        let map_key = DataKey::Key(key.clone());
+        if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
+            let retrieved_purposes: Vec<u128> = retrieved_key.purposes;
+
+            for retrieved_purpose in retrieved_purposes {
+                if purpose == 1 || purpose == retrieved_purpose {
+                    return true;
+                }
+            }
+        } else {
+            panic!("NotFound: Key isn't registered");
+        }
+
+        return false;
+    }
+}  
+
+#[contractimpl]
+impl IERC735 for Identity {
+    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: Address, signature: Bytes, data: Bytes, uri: String) -> String{
+        //TODO: Check claim key authorization
+        //Hash the concatenated value below
+        let claim_id = issuer.to_string();
+
+        return claim_id;
+    }
+}
