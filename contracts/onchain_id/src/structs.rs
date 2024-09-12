@@ -33,7 +33,7 @@ use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec, U256};
 
     #[derive(Clone)]
     #[contracttype]
-    struct Execution {
+pub struct Execution {
         pub to: Address,
         pub value: U256,
         pub data: Bytes,
@@ -62,8 +62,9 @@ use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec, U256};
     *  the claim scheme.
     *  uri: The location of the claim, this can be HTTP links, swarm hashes, IPFS hashes, and such.
     */
-    #[derive(Clone)]
-    struct Claim {
+#[derive(Clone)]
+#[contracttype]
+pub struct Claim {
         pub topic: U256,
         pub scheme: U256,
         pub issuer: Address,
@@ -77,5 +78,6 @@ use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec, U256};
 #[contracttype]
 pub enum DataKey {
     Key(String),
-    Purpose(u128)
+    Purpose(u128),
+    Claim(Bytes)
 }

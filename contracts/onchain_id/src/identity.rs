@@ -1,5 +1,5 @@
-use soroban_sdk::{contract, contractimpl, crypto::Crypto, vec, Address, Bytes, BytesN, Env, String, Vec, U256};
-use crate::{erc734::traits::IERC734, erc735::traits::IERC735, structs::{DataKey, Key}};
+use soroban_sdk::{contract, contractimpl, crypto::Crypto, vec, xdr::ToXdr, Address, Bytes, BytesN, Env, String, Vec, U256};
+use crate::{erc734::traits::IERC734, erc735::traits::IERC735, structs::{Claim, DataKey, Key}};
 
 #[contract]
 pub struct Identity;
@@ -35,9 +35,6 @@ impl IERC734 for Identity {
 
             retrieved_key.purposes.push_back(purpose);
         } else {
-            //let mut new_purposes: Vec<u128> = Vec::new(&e);
-            //new_purposes.push_back(purpose);
-
             let new_purposes: Vec<u128> = vec![&e, purpose];
             let new_key: Key = Key {
                 purposes: new_purposes,
@@ -181,11 +178,53 @@ impl IERC734 for Identity {
 
 #[contractimpl]
 impl IERC735 for Identity {
-    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: Address, signature: Bytes, data: Bytes, uri: String) -> String{
+    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: Address, signature: Bytes, data: Bytes, uri: String) -> Bytes{
         //TODO: Check claim key authorization
         //Hash the concatenated value below
-        let claim_id = issuer.to_string();
+        let mut claim_id = Bytes::new(&e);
+        claim_id.append(&issuer.clone().to_xdr(&e));
+        claim_id.append(&topic.clone().to_xdr(&e));
+
+        let claim: Claim = Claim {
+            topic,
+            scheme: scheme,
+            issuer: issuer,
+            signature: signature,
+            data: data,
+            uri: uri
+        };
+
+        let map_key = DataKey::Claim(claim_id.clone());
+        e.storage().persistent().set(&map_key, &claim);
 
         return claim_id;
+    }
+
+    /**
+    * See {IERC735-getClaim}.
+    * Implementation of the getClaim function from the ERC-735 standard.
+    *
+    * @param _claimId The identity of the claim i.e. keccak256(abi.encode(_issuer, _topic))
+    *
+    * @return topic Returns all the parameters of the claim for the
+    * specified _claimId (topic, scheme, signature, issuer, data, uri) .
+    * @return scheme Returns all the parameters of the claim for the
+    * specified _claimId (topic, scheme, signature, issuer, data, uri) .
+    * @return issuer Returns all the parameters of the claim for the
+    * specified _claimId (topic, scheme, signature, issuer, data, uri) .
+    * @return signature Returns all the parameters of the claim for the
+    * specified _claimId (topic, scheme, signature, issuer, data, uri) .
+    * @return data Returns all the parameters of the claim for the
+    * specified _claimId (topic, scheme, signature, issuer, data, uri) .
+    * @return uri Returns all the parameters of the claim for the
+    * specified _claimId (topic, scheme, signature, issuer, data, uri) .
+    */
+    fn get_claim(e: Env, claim_id: Bytes) -> (U256, U256, Address, Bytes, Bytes, String){
+        let map_key = DataKey::Claim(claim_id.clone());
+        if let Some(retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
+            (retrieved_claim.topic, retrieved_claim.scheme, retrieved_claim.issuer, retrieved_claim.signature, retrieved_claim.data, retrieved_claim.uri)
+        } else {
+            panic!("NotFound: Claim isn't added");
+        }
     }
 }
