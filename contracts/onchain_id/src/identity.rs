@@ -1,5 +1,5 @@
-use soroban_sdk::{contract, contractimpl, crypto::Crypto, vec, xdr::ToXdr, Address, Bytes, BytesN, Env, String, Vec, U256};
-use crate::{erc734::traits::IERC734, erc735::traits::IERC735, structs::{Claim, DataKey, Key}};
+use soroban_sdk::{contract, contractimpl, crypto::Crypto, vec, xdr::ToXdr, Address, Bytes, Env, String, Vec, U256};
+use crate::{claims_issuer::traits::IClaimIssuer, erc734::traits::IERC734, erc735::traits::IERC735, structs::{Claim, DataKey, Key}};
 
 #[contract]
 pub struct Identity;
@@ -180,22 +180,41 @@ impl IERC734 for Identity {
 impl IERC735 for Identity {
     fn add_claim(e: Env, topic: U256, scheme: U256, issuer: Address, signature: Bytes, data: Bytes, uri: String) -> Bytes{
         //TODO: Check claim key authorization
-        //Hash the concatenated value below
+        //Hash the concatenated value below and check that the signature is valid.
+
         let mut claim_id = Bytes::new(&e);
         claim_id.append(&issuer.clone().to_xdr(&e));
         claim_id.append(&topic.clone().to_xdr(&e));
 
-        let claim: Claim = Claim {
-            topic,
-            scheme: scheme,
-            issuer: issuer,
-            signature: signature,
-            data: data,
-            uri: uri
-        };
-
         let map_key = DataKey::Claim(claim_id.clone());
-        e.storage().persistent().set(&map_key, &claim);
+        if let Some(mut retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
+            retrieved_claim.topic = topic;
+            retrieved_claim.scheme = scheme;
+            retrieved_claim.signature = signature;
+            retrieved_claim.data = data;
+            retrieved_claim.uri = uri;
+
+            e.storage().persistent().set(&map_key, &retrieved_claim);
+        } else {
+            let claim: Claim = Claim {
+                topic: topic.clone(),
+                scheme,
+                issuer,
+                signature,
+                data,
+                uri
+            };
+            e.storage().persistent().set(&map_key, &claim);
+
+            let claim_topic_key = DataKey::ClaimTopic(topic.clone());
+            if let Some(mut retrieved_claim_topics) = e.storage().persistent().get::<DataKey, Vec<Bytes>>(&claim_topic_key) {
+                retrieved_claim_topics.push_back(claim_id.clone());
+                e.storage().persistent().set(&claim_topic_key, &retrieved_claim_topics);
+            } else {
+                let retrieved_claim_topics = vec![&e, topic];
+                e.storage().persistent().set(&claim_topic_key, &retrieved_claim_topics);
+            }
+        }
 
         return claim_id;
     }
@@ -224,7 +243,69 @@ impl IERC735 for Identity {
         if let Some(retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
             (retrieved_claim.topic, retrieved_claim.scheme, retrieved_claim.issuer, retrieved_claim.signature, retrieved_claim.data, retrieved_claim.uri)
         } else {
-            panic!("NotFound: Claim isn't added");
+            panic!("NotFound: There is no claim with this ID");
         }
+    }
+
+    /**
+    * See {IERC735-removeClaim}.
+    * Implementation of the removeClaim function from the ERC-735 standard
+    * Can only be removed by the claim issuer, or the claim holder itself.
+    *
+    * @param _claimId The identity of the claim i.e. keccak256(_issuer, _topic)
+    *
+    * @return success Returns TRUE when the claim was removed.
+    * triggers ClaimRemoved event
+    */
+    fn remove_claim(e: Env, claim_id: Bytes) -> bool{
+        let map_key = DataKey::Claim(claim_id.clone());
+        if let Some(retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
+            e.storage().persistent().remove(&map_key);
+
+            let topic_key = DataKey::ClaimTopic(retrieved_claim.topic);
+            if let Some(mut retrieved_claim_topic) = e.storage().persistent().get::<DataKey, Vec<Bytes>>(&topic_key) {
+                let mut claim_index = 0;
+                for retrieved_claim_id in retrieved_claim_topic.clone() {
+                    if retrieved_claim_id == claim_id {
+                        retrieved_claim_topic.remove(claim_index);
+                        break;
+                    }
+                    claim_index = claim_index + 1;
+                }
+            }
+
+        } else {
+            panic!("NotFound: There is no claim with this ID");
+        }
+        return true;
+    }
+
+    /**
+    * See {IERC735-getClaimIdsByTopic}.
+    * Implementation of the getClaimIdsByTopic function from the ERC-735 standard.
+    * used to get all the claims from the specified topic
+    * @param _topic The identity of the claim i.e. keccak256(_issuer, _topic)
+    * @return claimIds Returns an array of claim IDs by topic.
+    */
+    fn get_claim_ids_by_topic(e: Env, topic: U256) -> Vec<Bytes>
+    {
+        let map_key = DataKey::ClaimTopic(topic.clone());
+        if let Some(retrieved_claim_topic) = e.storage().persistent().get::<DataKey, Vec<Bytes>>(&map_key) {
+            retrieved_claim_topic
+        } else {
+            panic!("NotFound: Claim topic not found");
+        }
+    }
+}
+
+#[contractimpl]
+impl IClaimIssuer for Identity {
+
+    /**
+     * Checks if a claim is valid.
+     */
+    fn is_claim_valid(e: Env, identity: Address, topic: u128, sig: Bytes, data: Bytes) -> bool{
+        //TODO: validate the signature here.
+        return true;
     }
 }

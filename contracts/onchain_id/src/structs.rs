@@ -79,5 +79,6 @@ pub struct Claim {
 pub enum DataKey {
     Key(String),
     Purpose(u128),
-    Claim(Bytes)
+    Claim(Bytes),
+    ClaimTopic(U256)
 }
