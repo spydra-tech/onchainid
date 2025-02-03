@@ -20,7 +20,7 @@ impl IERC734 for Identity {
     * @param _purpose a uint256 specifying the key type, like 1 = MANAGEMENT, 2 = ACTION, 3 = CLAIM, 4 = ENCRYPTION
     * @return success Returns TRUE if the addition was successful and FALSE if not
     */
-    fn add_key(e: Env, key: String, purpose: u128, key_type: u128) -> bool {
+    fn add_key(e: Env, key: BytesN<32>, purpose: u128, key_type: u128) -> bool {
         //TODO: Authorization check for only manager
 
         let map_key = DataKey::Key(key.clone());
@@ -47,7 +47,7 @@ impl IERC734 for Identity {
         }
 
         let purpose_key = DataKey::Purpose(purpose);
-        if let Some(mut retrieved_purpose_keys) = e.storage().persistent().get::<DataKey, Vec<String>>(&purpose_key) {
+        if let Some(mut retrieved_purpose_keys) = e.storage().persistent().get::<DataKey, Vec<BytesN<32>>>(&purpose_key) {
             retrieved_purpose_keys.push_back(key);
             e.storage().persistent().set(&purpose_key, &retrieved_purpose_keys);
         } else {
@@ -63,7 +63,7 @@ impl IERC734 for Identity {
     * See {IERC734-removeKey}.
     * Remove the purpose from a key.
     */
-    fn remove_key(e: Env, key: String, purpose: u128) -> bool {
+    fn remove_key(e: Env, key: BytesN<32>, purpose: u128) -> bool {
         let map_key = DataKey::Key(key.clone());
         if let Some(mut retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
             let mut retrieved_purposes = retrieved_key.purposes;
@@ -87,7 +87,7 @@ impl IERC734 for Identity {
 
             let mut key_index = 0;
             let map_purpose = DataKey::Purpose(purpose);
-            if let Some(mut retrieved_keys) = e.storage().persistent().get::<DataKey, Vec<String>>(&map_purpose) {
+            if let Some(mut retrieved_keys) = e.storage().persistent().get::<DataKey, Vec<BytesN<32>>>(&map_purpose) {
                 let array_length = retrieved_keys.len();
 
                 while retrieved_keys.get_unchecked(key_index) != key {
@@ -119,7 +119,7 @@ impl IERC734 for Identity {
      * @return keyType Returns the full key data, if present in the identity.
      * @return key Returns the full key data, if present in the identity.
      */
-    fn get_key(e: Env, key: String) -> (Vec<u128>, u128, String){
+    fn get_key(e: Env, key: BytesN<32>) -> (Vec<u128>, u128, BytesN<32>){
         let map_key = DataKey::Key(key.clone());
         if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
             (retrieved_key.purposes, retrieved_key.key_type, retrieved_key.key)
@@ -134,7 +134,7 @@ impl IERC734 for Identity {
     * @param _key The public key
     * @return _purposes Returns the purposes of the specified key
     */
-    fn get_key_purposes(e: Env, key: String) -> Vec<u128>{
+    fn get_key_purposes(e: Env, key: BytesN<32>) -> Vec<u128>{
         let map_key = DataKey::Key(key.clone());
         if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
             retrieved_key.purposes
@@ -149,16 +149,16 @@ impl IERC734 for Identity {
     * @param _purpose a uint256[] Array of the key types, like 1 = MANAGEMENT, 2 = ACTION, 3 = CLAIM, 4 = ENCRYPTION
     * @return keys Returns an array of public key held by this identity and having the specified purpose
     */
-    fn get_keys_by_purpose(e: Env, purpose: u128) -> Vec<String>{
+    fn get_keys_by_purpose(e: Env, purpose: u128) -> Vec<BytesN<32>>{
         let map_purpose = DataKey::Purpose(purpose);
-        if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Vec<String>>(&map_purpose) {
+        if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Vec<BytesN<32>>>(&map_purpose) {
             return retrieved_key;
         } else {
             return vec![&e];
         }
     }
 
-    fn key_has_purpose(e: Env, key: String, purpose: u128) -> bool{
+    fn key_has_purpose(e: Env, key: BytesN<32>, purpose: u128) -> bool{
         let map_key = DataKey::Key(key.clone());
         if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
             let retrieved_purposes: Vec<u128> = retrieved_key.purposes;
@@ -178,7 +178,7 @@ impl IERC734 for Identity {
 
 #[contractimpl]
 impl IERC735 for Identity {
-    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: String, signature: Bytes, data: Bytes, uri: String) -> BytesN<32>{
+    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: BytesN<32>, signature: BytesN<64>, data: Bytes, uri: String) -> BytesN<32>{
         //TODO: Check claim key authorization
         //Hash the concatenated value below and check that the signature is valid.
 
@@ -239,7 +239,7 @@ impl IERC735 for Identity {
     * @return uri Returns all the parameters of the claim for the
     * specified _claimId (topic, scheme, signature, issuer, data, uri) .
     */
-    fn get_claim(e: Env, claim_id: BytesN<32>) -> (U256, U256, String, Bytes, Bytes, String){
+    fn get_claim(e: Env, claim_id: BytesN<32>) -> (U256, U256, BytesN<32>, BytesN<64>, Bytes, String){
         let map_key = DataKey::Claim(claim_id.clone());
         if let Some(retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
             (retrieved_claim.topic, retrieved_claim.scheme, retrieved_claim.issuer, retrieved_claim.signature, retrieved_claim.data, retrieved_claim.uri)
@@ -305,8 +305,18 @@ impl IClaimIssuer for Identity {
     /**
      * Checks if a claim is valid.
      */
-    fn is_claim_valid(e: Env, identity: String, topic: u128, sig: Bytes, data: Bytes) -> bool{
+    fn is_claim_valid(e: Env, identity: BytesN<32>, issuer: BytesN<32>, topic: u128, sig: BytesN<64>, data: Bytes) -> bool{
         //TODO: validate the signature here.
-        return true;
+
+        let mut message = Bytes::new(&e);
+        message.append(&Bytes::from_array(&e, &identity.to_array()));
+        message.append(&Bytes::from_array(&e, &topic.to_ne_bytes()));
+        message.append(&data);
+        if !Identity::key_has_purpose(e.clone(), issuer.clone(), 3) {
+            panic!("VerificationFailed: Issuer key is not authorized for this purpose");
+        }
+
+        e.crypto().ed25519_verify(&issuer, &data, &sig);
+        return true;    
     }
 }
