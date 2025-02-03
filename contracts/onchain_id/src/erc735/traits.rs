@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Bytes, Env, String, Vec, U256};
+use soroban_sdk::{Bytes, BytesN, Env, String, Vec, U256};
 
 /**
      * Add or update a claim.
@@ -23,14 +23,14 @@ pub trait IERC735 {
      * `keccak256(address identityHolder_address, uint256 topic, bytes data)`.
      * Claim IDs are generated using `keccak256(address issuer_address + uint256 topic)`.
      */
-    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: Address, signature: Bytes, data: Bytes, uri: String) -> Bytes;
+    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: String, signature: Bytes, data: Bytes, uri: String) -> BytesN<32>;
 
     /**
      * Get a claim by its ID.
      *
      * Claim IDs are generated using `keccak256(abi.encode(address issuer_address, uint256 topic))`.
      */
-    fn get_claim(e: Env, claim_id: Bytes) -> (U256, U256, Address, Bytes, Bytes, String);
+    fn get_claim(e: Env, claim_id: BytesN<32>) -> (U256, U256, String, Bytes, Bytes, String);
 
     /**
      * Removes a claim.
@@ -39,10 +39,10 @@ pub trait IERC735 {
      *
      * Claim IDs are generated using `keccak256(address issuer_address, uint256 topic)`.
      */
-    fn remove_claim(e: Env, claim_id: Bytes) -> bool;
+    fn remove_claim(e: Env, claim_id: BytesN<32>) -> bool;
 
     /**
      * Returns an array of claim IDs by topic.
      */
-    fn get_claim_ids_by_topic(e: Env, topic: U256) -> Vec<Bytes>;
+    fn get_claim_ids_by_topic(e: Env, topic: U256) -> Vec<BytesN<32>>;
 }

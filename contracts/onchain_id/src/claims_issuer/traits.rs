@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Bytes, Env};
+use soroban_sdk::{Bytes, Env, String};
 
 pub trait IClaimIssuer {
 
@@ -10,5 +10,5 @@ pub trait IClaimIssuer {
      * @param data the data field of the claim
      * @return claimValid true if the claim is valid, false otherwise
      */
-    fn is_claim_valid(e: Env, identity: Address, topic: u128, sig: Bytes, data: Bytes) -> bool;
+    fn is_claim_valid(e: Env, identity: String, topic: u128, sig: Bytes, data: Bytes) -> bool;
 }

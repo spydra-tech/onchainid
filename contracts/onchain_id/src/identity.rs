@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, crypto::Crypto, vec, xdr::ToXdr, Address, Bytes, Env, String, Vec, U256};
+use soroban_sdk::{contract, contractimpl, vec, xdr::ToXdr, Bytes, BytesN, Env, String, Vec, U256};
 use crate::{claims_issuer::traits::IClaimIssuer, erc734::traits::IERC734, erc735::traits::IERC735, structs::{Claim, DataKey, Key}};
 
 #[contract]
@@ -178,13 +178,14 @@ impl IERC734 for Identity {
 
 #[contractimpl]
 impl IERC735 for Identity {
-    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: Address, signature: Bytes, data: Bytes, uri: String) -> Bytes{
+    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: String, signature: Bytes, data: Bytes, uri: String) -> BytesN<32>{
         //TODO: Check claim key authorization
         //Hash the concatenated value below and check that the signature is valid.
 
-        let mut claim_id = Bytes::new(&e);
-        claim_id.append(&issuer.clone().to_xdr(&e));
-        claim_id.append(&topic.clone().to_xdr(&e));
+        let mut claim_id_bytes = Bytes::new(&e);
+        claim_id_bytes.append(&issuer.clone().to_xdr(&e));
+        claim_id_bytes.append(&topic.clone().to_xdr(&e));
+        let claim_id = e.crypto().keccak256(&claim_id_bytes).to_bytes();
 
         let map_key = DataKey::Claim(claim_id.clone());
         if let Some(mut retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
@@ -207,11 +208,11 @@ impl IERC735 for Identity {
             e.storage().persistent().set(&map_key, &claim);
 
             let claim_topic_key = DataKey::ClaimTopic(topic.clone());
-            if let Some(mut retrieved_claim_topics) = e.storage().persistent().get::<DataKey, Vec<Bytes>>(&claim_topic_key) {
+            if let Some(mut retrieved_claim_topics) = e.storage().persistent().get::<DataKey, Vec<BytesN<32>>>(&claim_topic_key) {
                 retrieved_claim_topics.push_back(claim_id.clone());
                 e.storage().persistent().set(&claim_topic_key, &retrieved_claim_topics);
             } else {
-                let retrieved_claim_topics = vec![&e, topic];
+                let retrieved_claim_topics = vec![&e, claim_id.clone()];
                 e.storage().persistent().set(&claim_topic_key, &retrieved_claim_topics);
             }
         }
@@ -238,7 +239,7 @@ impl IERC735 for Identity {
     * @return uri Returns all the parameters of the claim for the
     * specified _claimId (topic, scheme, signature, issuer, data, uri) .
     */
-    fn get_claim(e: Env, claim_id: Bytes) -> (U256, U256, Address, Bytes, Bytes, String){
+    fn get_claim(e: Env, claim_id: BytesN<32>) -> (U256, U256, String, Bytes, Bytes, String){
         let map_key = DataKey::Claim(claim_id.clone());
         if let Some(retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
             (retrieved_claim.topic, retrieved_claim.scheme, retrieved_claim.issuer, retrieved_claim.signature, retrieved_claim.data, retrieved_claim.uri)
@@ -257,13 +258,13 @@ impl IERC735 for Identity {
     * @return success Returns TRUE when the claim was removed.
     * triggers ClaimRemoved event
     */
-    fn remove_claim(e: Env, claim_id: Bytes) -> bool{
+    fn remove_claim(e: Env, claim_id: BytesN<32>) -> bool{
         let map_key = DataKey::Claim(claim_id.clone());
         if let Some(retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
             e.storage().persistent().remove(&map_key);
 
             let topic_key = DataKey::ClaimTopic(retrieved_claim.topic);
-            if let Some(mut retrieved_claim_topic) = e.storage().persistent().get::<DataKey, Vec<Bytes>>(&topic_key) {
+            if let Some(mut retrieved_claim_topic) = e.storage().persistent().get::<DataKey, Vec<BytesN<32>>>(&topic_key) {
                 let mut claim_index = 0;
                 for retrieved_claim_id in retrieved_claim_topic.clone() {
                     if retrieved_claim_id == claim_id {
@@ -287,10 +288,10 @@ impl IERC735 for Identity {
     * @param _topic The identity of the claim i.e. keccak256(_issuer, _topic)
     * @return claimIds Returns an array of claim IDs by topic.
     */
-    fn get_claim_ids_by_topic(e: Env, topic: U256) -> Vec<Bytes>
+    fn get_claim_ids_by_topic(e: Env, topic: U256) -> Vec<BytesN<32>>
     {
         let map_key = DataKey::ClaimTopic(topic.clone());
-        if let Some(retrieved_claim_topic) = e.storage().persistent().get::<DataKey, Vec<Bytes>>(&map_key) {
+        if let Some(retrieved_claim_topic) = e.storage().persistent().get::<DataKey, Vec<BytesN<32>>>(&map_key) {
             retrieved_claim_topic
         } else {
             panic!("NotFound: Claim topic not found");
@@ -304,7 +305,7 @@ impl IClaimIssuer for Identity {
     /**
      * Checks if a claim is valid.
      */
-    fn is_claim_valid(e: Env, identity: Address, topic: u128, sig: Bytes, data: Bytes) -> bool{
+    fn is_claim_valid(e: Env, identity: String, topic: u128, sig: Bytes, data: Bytes) -> bool{
         //TODO: validate the signature here.
         return true;
     }

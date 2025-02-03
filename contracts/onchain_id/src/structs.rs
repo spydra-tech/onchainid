@@ -67,7 +67,7 @@ pub struct Execution {
 pub struct Claim {
         pub topic: U256,
         pub scheme: U256,
-        pub issuer: Address,
+        pub issuer: String,
         pub signature: Bytes,
         pub data: Bytes,
         pub uri: String,
@@ -79,6 +79,6 @@ pub struct Claim {
 pub enum DataKey {
     Key(String),
     Purpose(u128),
-    Claim(Bytes),
+    Claim(BytesN<32>),
     ClaimTopic(U256)
 }
