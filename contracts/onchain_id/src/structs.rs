@@ -14,8 +14,8 @@ use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Vec, U256};
     #[derive(Clone)]
     #[contracttype]
     pub struct Key {
-        pub purposes: Vec<u128>,
-        pub key_type: u128,
+        pub purposes: Vec<u32>,
+        pub key_type: u32,
         pub key: BytesN<32>,
     }
 
@@ -65,8 +65,8 @@ pub struct Execution {
 #[derive(Clone)]
 #[contracttype]
 pub struct Claim {
-        pub topic: U256,
-        pub scheme: U256,
+        pub topic: u32,
+        pub scheme: u32,
         pub issuer: BytesN<32>,
         pub signature: BytesN<64>,
         pub data: Bytes,
@@ -78,7 +78,7 @@ pub struct Claim {
 #[contracttype]
 pub enum DataKey {
     Key(BytesN<32>),
-    Purpose(u128),
+    Purpose(u32),
     Claim(BytesN<32>),
-    ClaimTopic(U256)
+    ClaimTopic(u32)
 }

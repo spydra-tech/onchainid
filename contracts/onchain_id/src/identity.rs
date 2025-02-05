@@ -1,5 +1,5 @@
-use soroban_sdk::{contract, contractimpl, vec, xdr::ToXdr, Bytes, BytesN, Env, String, Vec, U256};
-use crate::{claims_issuer::traits::IClaimIssuer, erc734::traits::IERC734, erc735::traits::IERC735, structs::{Claim, DataKey, Key}};
+use soroban_sdk::{contract, contractimpl, vec, xdr::ToXdr, Bytes, BytesN, Env, String, Vec};
+use crate::{claims_issuer::traits::IClaimIssuer, erc734::traits::IERC734, erc735::traits::IERC735, error::OnChainIdError, structs::{Claim, DataKey, Key}};
 
 #[contract]
 pub struct Identity;
@@ -20,30 +20,28 @@ impl IERC734 for Identity {
     * @param _purpose a uint256 specifying the key type, like 1 = MANAGEMENT, 2 = ACTION, 3 = CLAIM, 4 = ENCRYPTION
     * @return success Returns TRUE if the addition was successful and FALSE if not
     */
-    fn add_key(e: Env, key: BytesN<32>, purpose: u128, key_type: u128) -> bool {
+    fn add_key(e: Env, key: BytesN<32>, purpose: u32, key_type: u32) -> Result<bool, OnChainIdError> {
         //TODO: Authorization check for only manager
 
         let map_key = DataKey::Key(key.clone());
         if let Some(mut retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
-            let retrieved_purposes: Vec<u128> = retrieved_key.purposes.clone();
+            let retrieved_purposes: Vec<u32> = retrieved_key.purposes.clone();
 
             for retrieved_purpose in retrieved_purposes {
                 if purpose == retrieved_purpose {
-                    panic!("Conflict: Key already has purpose");
+                    return Err(OnChainIdError::KeyAlreadyHasPurpose);
                 }
             }
 
             retrieved_key.purposes.push_back(purpose);
         } else {
-            let new_purposes: Vec<u128> = vec![&e, purpose];
+            let new_purposes: Vec<u32> = vec![&e, purpose];
             let new_key: Key = Key {
                 purposes: new_purposes,
                 key_type: key_type,
                 key: key.clone(),
             };
             e.storage().persistent().set(&map_key, &new_key);
-
-            //TODO: Set TTL?
         }
 
         let purpose_key = DataKey::Purpose(purpose);
@@ -56,14 +54,14 @@ impl IERC734 for Identity {
         }
   
         //TODO: Emit Event
-        return true;
+        Ok(true)
     }
 
     /**
     * See {IERC734-removeKey}.
     * Remove the purpose from a key.
     */
-    fn remove_key(e: Env, key: BytesN<32>, purpose: u128) -> bool {
+    fn remove_key(e: Env, key: BytesN<32>, purpose: u32) -> Result<bool, OnChainIdError> {
         let map_key = DataKey::Key(key.clone());
         if let Some(mut retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
             let mut retrieved_purposes = retrieved_key.purposes;
@@ -71,7 +69,7 @@ impl IERC734 for Identity {
             while retrieved_purposes.get_unchecked(purpose_index) != purpose {
                 purpose_index = purpose_index+1;
                 if purpose_index == retrieved_purposes.len() {
-                    panic!("NotFound: Key doesn't have such purpose");
+                    return Err(OnChainIdError::KeyDoesntHavePurpose);
                 }
             }
 
@@ -101,13 +99,12 @@ impl IERC734 for Identity {
                 retrieved_keys.set(key_index, retrieved_keys.get_unchecked(array_length-1));
                 retrieved_keys.pop_back();
                 e.storage().persistent().set(&map_purpose, &retrieved_keys);
-                //TODO: Adjust TTL
             }
 
             //TODO: Raise Event
-            return true;
+            Ok(true)
         } else {
-            panic!("NotFound: Key isn't registered");
+            Err(OnChainIdError::KeyNotRegistered)
         }
     }
 
@@ -119,12 +116,12 @@ impl IERC734 for Identity {
      * @return keyType Returns the full key data, if present in the identity.
      * @return key Returns the full key data, if present in the identity.
      */
-    fn get_key(e: Env, key: BytesN<32>) -> (Vec<u128>, u128, BytesN<32>){
+    fn get_key(e: Env, key: BytesN<32>) -> Result<(Vec<u32>, u32, BytesN<32>), OnChainIdError>{
         let map_key = DataKey::Key(key.clone());
         if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
-            (retrieved_key.purposes, retrieved_key.key_type, retrieved_key.key)
+            Ok((retrieved_key.purposes, retrieved_key.key_type, retrieved_key.key))
         } else {
-            panic!("NotFound: Key isn't registered");
+            Err(OnChainIdError::KeyAlreadyHasPurpose)
         }
     }
 
@@ -134,12 +131,12 @@ impl IERC734 for Identity {
     * @param _key The public key
     * @return _purposes Returns the purposes of the specified key
     */
-    fn get_key_purposes(e: Env, key: BytesN<32>) -> Vec<u128>{
+    fn get_key_purposes(e: Env, key: BytesN<32>) -> Result<Vec<u32>, OnChainIdError>{
         let map_key = DataKey::Key(key.clone());
         if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
-            retrieved_key.purposes
+            Ok(retrieved_key.purposes)
         } else {
-            panic!("NotFound: Key isn't registered");
+            Err(OnChainIdError::KeyNotRegistered)
         }
     }
 
@@ -149,7 +146,7 @@ impl IERC734 for Identity {
     * @param _purpose a uint256[] Array of the key types, like 1 = MANAGEMENT, 2 = ACTION, 3 = CLAIM, 4 = ENCRYPTION
     * @return keys Returns an array of public key held by this identity and having the specified purpose
     */
-    fn get_keys_by_purpose(e: Env, purpose: u128) -> Vec<BytesN<32>>{
+    fn get_keys_by_purpose(e: Env, purpose: u32) -> Vec<BytesN<32>>{
         let map_purpose = DataKey::Purpose(purpose);
         if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Vec<BytesN<32>>>(&map_purpose) {
             return retrieved_key;
@@ -158,27 +155,27 @@ impl IERC734 for Identity {
         }
     }
 
-    fn key_has_purpose(e: Env, key: BytesN<32>, purpose: u128) -> bool{
+    fn key_has_purpose(e: Env, key: BytesN<32>, purpose: u32) -> Result<bool, OnChainIdError>{
         let map_key = DataKey::Key(key.clone());
         if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
-            let retrieved_purposes: Vec<u128> = retrieved_key.purposes;
+            let retrieved_purposes: Vec<u32> = retrieved_key.purposes;
 
             for retrieved_purpose in retrieved_purposes {
                 if purpose == 1 || purpose == retrieved_purpose {
-                    return true;
+                    return Ok(true);
                 }
             }
         } else {
-            panic!("NotFound: Key isn't registered");
+            return Err(OnChainIdError::KeyNotRegistered);
         }
 
-        return false;
+        Ok(false)
     }
 }  
 
 #[contractimpl]
 impl IERC735 for Identity {
-    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: BytesN<32>, signature: BytesN<64>, data: Bytes, uri: String) -> BytesN<32>{
+    fn add_claim(e: Env, topic: u32, scheme: u32, issuer: BytesN<32>, signature: BytesN<64>, data: Bytes, uri: String) -> BytesN<32>{
         //TODO: Check claim key authorization
         //Hash the concatenated value below and check that the signature is valid.
 
@@ -239,12 +236,12 @@ impl IERC735 for Identity {
     * @return uri Returns all the parameters of the claim for the
     * specified _claimId (topic, scheme, signature, issuer, data, uri) .
     */
-    fn get_claim(e: Env, claim_id: BytesN<32>) -> (U256, U256, BytesN<32>, BytesN<64>, Bytes, String){
+    fn get_claim(e: Env, claim_id: BytesN<32>) -> Result<(u32, u32, BytesN<32>, BytesN<64>, Bytes, String), OnChainIdError>{
         let map_key = DataKey::Claim(claim_id.clone());
         if let Some(retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
-            (retrieved_claim.topic, retrieved_claim.scheme, retrieved_claim.issuer, retrieved_claim.signature, retrieved_claim.data, retrieved_claim.uri)
+            Ok((retrieved_claim.topic, retrieved_claim.scheme, retrieved_claim.issuer, retrieved_claim.signature, retrieved_claim.data, retrieved_claim.uri))
         } else {
-            panic!("NotFound: There is no claim with this ID");
+            Err(OnChainIdError::NoClaimFound)
         }
     }
 
@@ -258,7 +255,7 @@ impl IERC735 for Identity {
     * @return success Returns TRUE when the claim was removed.
     * triggers ClaimRemoved event
     */
-    fn remove_claim(e: Env, claim_id: BytesN<32>) -> bool{
+    fn remove_claim(e: Env, claim_id: BytesN<32>) -> Result<bool, OnChainIdError>{
         let map_key = DataKey::Claim(claim_id.clone());
         if let Some(retrieved_claim) = e.storage().persistent().get::<DataKey, Claim>(&map_key) {
             e.storage().persistent().remove(&map_key);
@@ -276,9 +273,9 @@ impl IERC735 for Identity {
             }
 
         } else {
-            panic!("NotFound: There is no claim with this ID");
+            return Err(OnChainIdError::NoClaimFound);
         }
-        return true;
+        return Ok(true)
     }
 
     /**
@@ -288,13 +285,13 @@ impl IERC735 for Identity {
     * @param _topic The identity of the claim i.e. keccak256(_issuer, _topic)
     * @return claimIds Returns an array of claim IDs by topic.
     */
-    fn get_claim_ids_by_topic(e: Env, topic: U256) -> Vec<BytesN<32>>
+    fn get_claim_ids_by_topic(e: Env, topic: u32) -> Result<Vec<BytesN<32>>, OnChainIdError>
     {
         let map_key = DataKey::ClaimTopic(topic.clone());
         if let Some(retrieved_claim_topic) = e.storage().persistent().get::<DataKey, Vec<BytesN<32>>>(&map_key) {
-            retrieved_claim_topic
+            Ok(retrieved_claim_topic)
         } else {
-            panic!("NotFound: Claim topic not found");
+            Err(OnChainIdError::NoClaimTopicFound)
         }
     }
 }
@@ -305,18 +302,21 @@ impl IClaimIssuer for Identity {
     /**
      * Checks if a claim is valid.
      */
-    fn is_claim_valid(e: Env, identity: BytesN<32>, issuer: BytesN<32>, topic: u128, sig: BytesN<64>, data: Bytes) -> bool{
-        //TODO: validate the signature here.
+    fn is_claim_valid(e: Env, identity: BytesN<32>, issuer: BytesN<32>, topic: u32, sig: BytesN<64>, data: Bytes) -> Result<bool, OnChainIdError>{
 
         let mut message = Bytes::new(&e);
         message.append(&Bytes::from_array(&e, &identity.to_array()));
-        message.append(&Bytes::from_array(&e, &topic.to_ne_bytes()));
+        message.append(&Bytes::from_array(&e,&topic.to_be_bytes()));
         message.append(&data);
-        if !Identity::key_has_purpose(e.clone(), issuer.clone(), 3) {
-            panic!("VerificationFailed: Issuer key is not authorized for this purpose");
+        if let Ok(key_valid) = Identity::key_has_purpose(e.clone(), issuer.clone(), 3) {
+            if !key_valid{
+                return Err(OnChainIdError::IssuerKeyNotAuthorized);
+            }
+        } else {
+            return Err(OnChainIdError::IssuerKeyNotAuthorized);
         }
 
-        e.crypto().ed25519_verify(&issuer, &data, &sig);
-        return true;    
+        e.crypto().ed25519_verify(&issuer, &message, &sig);
+        Ok(true)    
     }
 }

@@ -1,4 +1,6 @@
-use soroban_sdk::{Bytes, BytesN, Env, String, Vec, U256};
+use soroban_sdk::{Bytes, BytesN, Env, String, Vec};
+
+use crate::error::OnChainIdError;
 
 /**
      * Add or update a claim.
@@ -23,14 +25,14 @@ pub trait IERC735 {
      * `keccak256(address identityHolder_address, uint256 topic, bytes data)`.
      * Claim IDs are generated using `keccak256(address issuer_address + uint256 topic)`.
      */
-    fn add_claim(e: Env, topic: U256, scheme: U256, issuer: BytesN<32>, signature: BytesN<64>, data: Bytes, uri: String) -> BytesN<32>;
+    fn add_claim(e: Env, topic: u32, scheme: u32, issuer: BytesN<32>, signature: BytesN<64>, data: Bytes, uri: String) -> BytesN<32>;
 
     /**
      * Get a claim by its ID.
      *
      * Claim IDs are generated using `keccak256(abi.encode(address issuer_address, uint256 topic))`.
      */
-    fn get_claim(e: Env, claim_id: BytesN<32>) -> (U256, U256, BytesN<32>, BytesN<64>, Bytes, String);
+    fn get_claim(e: Env, claim_id: BytesN<32>) -> Result<(u32, u32, BytesN<32>, BytesN<64>, Bytes, String), OnChainIdError>;
 
     /**
      * Removes a claim.
@@ -39,10 +41,10 @@ pub trait IERC735 {
      *
      * Claim IDs are generated using `keccak256(address issuer_address, uint256 topic)`.
      */
-    fn remove_claim(e: Env, claim_id: BytesN<32>) -> bool;
+    fn remove_claim(e: Env, claim_id: BytesN<32>) -> Result<bool, OnChainIdError>;
 
     /**
      * Returns an array of claim IDs by topic.
      */
-    fn get_claim_ids_by_topic(e: Env, topic: U256) -> Vec<BytesN<32>>;
+    fn get_claim_ids_by_topic(e: Env, topic: u32) -> Result<Vec<BytesN<32>>, OnChainIdError>;
 }

@@ -1,5 +1,7 @@
 use soroban_sdk::{Bytes, BytesN, Env};
 
+use crate::error::OnChainIdError;
+
 pub trait IClaimIssuer {
 
     /**
@@ -10,5 +12,5 @@ pub trait IClaimIssuer {
      * @param data the data field of the claim
      * @return claimValid true if the claim is valid, false otherwise
      */
-    fn is_claim_valid(e: Env, identity: BytesN<32>, issuer: BytesN<32>, topic: u128, sig: BytesN<64>, data: Bytes) -> bool;
+    fn is_claim_valid(e: Env, identity: BytesN<32>, issuer: BytesN<32>, topic: u32, sig: BytesN<64>, data: Bytes) -> Result<bool, OnChainIdError>;
 }
