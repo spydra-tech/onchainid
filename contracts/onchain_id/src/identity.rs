@@ -21,7 +21,6 @@ impl IERC734 for Identity {
     * @return success Returns TRUE if the addition was successful and FALSE if not
     */
     fn add_key(e: Env, key: BytesN<32>, purpose: u32, key_type: u32) -> Result<bool, OnChainIdError> {
-        //TODO: Authorization check for only manager
 
         let map_key = DataKey::Key(key.clone());
         if let Some(mut retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
@@ -53,7 +52,6 @@ impl IERC734 for Identity {
             e.storage().persistent().set(&purpose_key, &retrieved_purpose_keys);
         }
   
-        //TODO: Emit Event
         Ok(true)
     }
 
@@ -101,7 +99,6 @@ impl IERC734 for Identity {
                 e.storage().persistent().set(&map_purpose, &retrieved_keys);
             }
 
-            //TODO: Raise Event
             Ok(true)
         } else {
             Err(OnChainIdError::KeyNotRegistered)
@@ -176,8 +173,6 @@ impl IERC734 for Identity {
 #[contractimpl]
 impl IERC735 for Identity {
     fn add_claim(e: Env, topic: u32, scheme: u32, issuer: BytesN<32>, signature: BytesN<64>, data: Bytes, uri: String) -> BytesN<32>{
-        //TODO: Check claim key authorization
-        //Hash the concatenated value below and check that the signature is valid.
 
         let mut claim_id_bytes = Bytes::new(&e);
         claim_id_bytes.append(&issuer.clone().to_xdr(&e));
