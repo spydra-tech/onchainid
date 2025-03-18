@@ -36,3 +36,5 @@ pnpm-debug.log*
 packages/*
 # if you have other workspace packages, add them here
 !packages/.gitkeep
+
+test_snapshots

@@ -6,3 +6,4 @@ mod erc735;
 mod structs;
 mod claims_issuer;
 mod error;
+mod test;

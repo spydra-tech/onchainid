@@ -118,7 +118,7 @@ impl IERC734 for Identity {
         if let Some(retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
             Ok((retrieved_key.purposes, retrieved_key.key_type, retrieved_key.key))
         } else {
-            Err(OnChainIdError::KeyAlreadyHasPurpose)
+            Err(OnChainIdError::KeyNotRegistered)
         }
     }
 
