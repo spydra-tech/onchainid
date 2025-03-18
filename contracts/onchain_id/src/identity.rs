@@ -62,7 +62,7 @@ impl IERC734 for Identity {
     fn remove_key(e: Env, key: BytesN<32>, purpose: u32) -> Result<bool, OnChainIdError> {
         let map_key = DataKey::Key(key.clone());
         if let Some(mut retrieved_key) = e.storage().persistent().get::<DataKey, Key>(&map_key) {
-            let mut retrieved_purposes = retrieved_key.purposes;
+            let retrieved_purposes = &mut retrieved_key.purposes;
             let mut purpose_index = 0;
             while retrieved_purposes.get_unchecked(purpose_index) != purpose {
                 purpose_index = purpose_index+1;
@@ -71,11 +71,14 @@ impl IERC734 for Identity {
                 }
             }
 
-            retrieved_purposes.set(purpose_index, retrieved_purposes.get_unchecked(retrieved_purposes.len()-1));
-            retrieved_purposes.pop_back();
-            retrieved_key.purposes = retrieved_purposes;
+            let last_retrieved_purpose = retrieved_purposes.last();
+            if last_retrieved_purpose.is_some() {
+                retrieved_purposes.set(purpose_index, last_retrieved_purpose.unwrap());
+                retrieved_purposes.pop_back();
+                retrieved_key.purposes = retrieved_purposes.clone();
+            }
 
-            if retrieved_key.purposes.len()-1 == 0 {
+            if retrieved_key.purposes.len() == 0 {
                 e.storage().persistent().remove(&map_key);
             } else {
                 e.storage().persistent().set(&map_key, &retrieved_key);
